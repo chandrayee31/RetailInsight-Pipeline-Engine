@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: airflow-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &airflow-common-env
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "True"
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/  
+      AIRFLOW__API_AUTH__JWT_SECRET: 6d5e8c3b1a9f4e7d8c2b5a1f6e9d3c7b4a8f1d2e6c3b9a7f5d1e8c4b2a6f9d3
+      AIRFLOW__API_AUTH__SECRET_KEY: 2f4c8a1d7e3b9f6c5a2d8e1b4f7c9a3d6e2b5f8a1c4d7e9b3f6a2c5d8e1f4b7
+      PYTHONPATH: /opt/airflow
+    volumes: &airflow-common-volumes
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./config:/opt/airflow/config
+      - ./plugins:/opt/airflow/plugins
+      - ./scripts:/opt/airflow/scripts
+      - ./spark_jobs:/opt/airflow/spark_jobs
+      - ./utils:/opt/airflow/utils
+      - ./data:/opt/airflow/data
+    command: >
+      bash -c "airflow db migrate"
+
+  airflow-api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: airflow-api-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *airflow-common-env
+    volumes: *airflow-common-volumes
+    ports:
+      - "8080:8080"
+    command: api-server
+    restart: unless-stopped
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: airflow-scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-api-server:
+        condition: service_started
+    environment:
+      <<: *airflow-common-env
+    volumes: *airflow-common-volumes
+    command: scheduler
+    restart: unless-stopped
+
+  airflow-dag-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: airflow-dag-processor
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-api-server:
+        condition: service_started
+    environment:
+      <<: *airflow-common-env
+    volumes: *airflow-common-volumes
+    command: dag-processor
+    restart: unless-stopped
+
+  airflow-triggerer:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: airflow-triggerer
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-api-server:
+        condition: service_started
+    environment:
+      <<: *airflow-common-env
+    volumes: *airflow-common-volumes
+    command: triggerer
+    restart: unless-stopped
+
+volumes:
+  postgres-db-volume:
