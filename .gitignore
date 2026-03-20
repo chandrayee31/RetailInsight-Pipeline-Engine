@@ -1,1 +1,27 @@
-logs
+# Airflow
+airflow_home/
+airflow.log
+
+# Logs
+logs/
+*.log
+
+# DB files
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+
+# Data outputs
+data/processed/
+data/curated/
+*.parquet
+
+# Spark temp
+spark-warehouse/
+
+# OS
+.DS_Store
